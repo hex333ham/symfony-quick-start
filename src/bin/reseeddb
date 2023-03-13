@@ -1,0 +1,58 @@
+#!/bin/bash
+
+# grab env name as a variable
+if [ -e .env.local ]
+then
+    # use local env
+    ENV=$(grep "APP_ENV=" .env.local | xargs)
+else
+    # use default env
+    ENV=$(grep "APP_ENV=" .env | xargs)
+fi
+ENV="$(echo -e "${ENV}" | tr -d '[:space:]')"
+
+# grab docker container, xargs to trim whitespace
+CONTAINER_ID="$(docker ps --filter name=^/wonde-tech-test-mar23-php  --format '{{.ID}}' | xargs)"
+
+# command array to clear cache, setup db and seed db
+COMMANDS=(
+    "php bin/console cache:clear"
+    "php bin/console doctrine:cache:clear-metadata"
+    "php bin/console doctrine:cache:clear-query"
+    "php bin/console doctrine:cache:clear-result"
+    "php bin/console doctrine:database:drop --env=dev --force"
+    "php bin/console doctrine:database:create --env=dev"
+    "php bin/console doctrine:migrations:migrate --env=dev"
+    "php bin/console database:seed"
+)
+
+# warn user which version will run
+if [ ! "$CONTAINER_ID" ];then
+    echo -e "\033[0;33mDocker not found, attempting CLI drop & seed in 5s.\033[0m"
+else
+    echo -e "\033[0;32mDocker container found, attempting Docker drop & seed in 5s!\033[0m"
+fi
+
+# sleep 5 seconds
+sleep 5
+
+# check for dev env, abort if not using
+if [ "$ENV" == 'APP_ENV=dev' ]
+then
+    # loop over db commands
+    for i in "${COMMANDS[@]}"
+    do
+        if [ ! "$CONTAINER_ID" ];then
+            # if no docker ID, just run it
+            $i
+        else
+            # if docker ID, then attempt docker
+            
+            docker exec "$CONTAINER_ID" $i
+        fi
+    done
+    echo -e "\033[0;32mScript complete!\033[0m"
+else
+    # abort as we are not on dev env
+    echo -e "\033[0;31mAborting, not on 'dev' env\033[0m"
+fi
